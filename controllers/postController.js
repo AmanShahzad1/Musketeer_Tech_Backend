@@ -260,13 +260,19 @@ exports.getUserPosts = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const posts = await Post.find({ user: req.params.userId })
+    // First find the user to get their ObjectId
+    const user = await User.findOne({ username: req.params.userId });
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    const posts = await Post.find({ user: user._id })
       .populate("user", "username firstName lastName profilePicture")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    const total = await Post.countDocuments({ user: req.params.userId });
+    const total = await Post.countDocuments({ user: user._id });
     const totalPages = Math.ceil(total / limit);
 
     res.json({
@@ -342,6 +348,100 @@ exports.unlikePost = async (req, res) => {
     });
   } catch (err) {
     console.error("Unlike post error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+
+
+
+
+// Update handleLikePost to emit real-time updates
+exports.likePost = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await Post.findById(id);
+    
+    if (!post) {
+      return res.status(404).json({ msg: "Post not found" });
+    }
+
+    // Check if already liked
+    if (post.likes.includes(req.user.id)) {
+      return res.status(400).json({ msg: "Post already liked" });
+    }
+
+    post.likes.push(req.user.id);
+    await post.save();
+
+    // Emit real-time update
+    const io = req.app.get('io');
+    io.emit('postLiked', {
+      postId: id,
+      userId: req.user.id,
+      userName: req.user.firstName + ' ' + req.user.lastName,
+      likeCount: post.likes.length
+    });
+
+    res.json({
+      success: true,
+      data: { post }
+    });
+  } catch (err) {
+    console.error("Like post error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// Update addComment to emit real-time updates
+exports.addComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ msg: "Comment text is required" });
+    }
+
+    const post = await Post.findById(id);
+    if (!post) {
+      return res.status(404).json({ msg: "Post not found" });
+    }
+
+    const comment = {
+      user: req.user.id,
+      text: text.trim(),
+      createdAt: new Date()
+    };
+
+    post.comments.push(comment);
+    await post.save();
+
+    // Populate user info
+    await post.populate('comments.user', 'username firstName lastName profilePicture');
+
+    // Emit real-time update
+    const io = req.app.get('io');
+    io.emit('newComment', {
+      postId: id,
+      comment: {
+        ...comment,
+        user: {
+          _id: req.user.id,
+          username: req.user.username,
+          firstName: req.user.firstName,
+          lastName: req.user.lastName
+        }
+      },
+      commentCount: post.comments.length
+    });
+
+    res.json({
+      success: true,
+      data: { comment }
+    });
+  } catch (err) {
+    console.error("Add comment error:", err);
     res.status(500).json({ msg: "Server error" });
   }
 };
