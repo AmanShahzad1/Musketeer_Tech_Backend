@@ -1,24 +1,33 @@
 const express = require("express");
-const {
-  createPost,
-  getFeedPosts,
-  getPost,
-  deletePost,
-  getUserPosts
+const { 
+  createPost, 
+  getPosts, 
+  getPost, 
+  deletePost, 
+  getUserPosts,
+  likePost,
+  unlikePost,
+  addComment,
+  getComments,
+  deleteComment
 } = require("../controllers/postController");
 const { protect } = require("../middleware/authMiddleware");
-const upload = require("../utils/multer");
+const upload = require("../middleware/uploadMiddleware");
 
 const router = express.Router();
 
-router.route("/")
-  .post(upload.single("image"), createPost)
-  .get(getFeedPosts);
+// Public routes
+router.get("/", getPosts);
+router.get("/:id", getPost);
+router.get("/user/:userId", getUserPosts);
+router.get("/:id/comments", getComments);
 
-router.route("/:id")
-  .get(getPost)
-  .delete(deletePost);
-
-router.get("/users/:userId/posts", getUserPosts);
+// Protected routes
+router.post("/", protect, upload.single("image"), createPost);
+router.delete("/:id", protect, deletePost);
+router.post("/:id/like", protect, likePost);
+router.delete("/:id/like", protect, unlikePost);
+router.post("/:id/comments", protect, addComment);
+router.delete("/:id/comments/:commentId", protect, deleteComment);
 
 module.exports = router;

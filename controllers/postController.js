@@ -1,140 +1,259 @@
 const Post = require("../models/Post");
-const fs = require('fs');
-const path = require('path');
+const User = require("../models/User");
 
-// Helper function for error responses
-const handleError = (res, statusCode, message) => {
-  return res.status(statusCode).json({
-    status: "error",
-    message
-  });
-};
-
-// @desc    Create a post
+// @desc    Create a new post
 // @route   POST /api/posts
+// @access  Private
 exports.createPost = async (req, res) => {
   try {
-    console.log("Requesting");
-    const { text, userId } = req.body;
-    //const image = req.file ? `/uploads/${req.file.filename}` : undefined;
-
-    if (!text || !userId) {
-      return handleError(res, 400, "Text and user ID are required");
+    const { text } = req.body;
+    
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ msg: "Post text is required" });
     }
 
-    const post = await Post.create({
-      text,
-      image,
-      user: userId
-    });
+    if (text.length > 280) {
+      return res.status(400).json({ msg: "Post cannot exceed 280 characters" });
+    }
 
-    await post.populate('user', 'username profilePicture');
+    const postData = {
+      text: text.trim(),
+      user: req.user.id
+    };
+
+    // Add image if uploaded
+    if (req.file) {
+      postData.image = req.file.path;
+    }
+
+    const post = new Post(postData);
+    await post.save();
+
+    // Populate user info
+    await post.populate("user", "username firstName lastName profilePicture");
 
     res.status(201).json({
-      status: "success",
-      data: {
-        post
-      }
+      success: true,
+      data: { post }
     });
   } catch (err) {
-    handleError(res, 500, "Server error");
+    console.error("Create post error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
 };
 
-// @desc    Get feed posts (paginated)
+// @desc    Get all posts (paginated)
 // @route   GET /api/posts
-exports.getFeedPosts = async (req, res) => {
+// @access  Public
+exports.getPosts = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
     const posts = await Post.find()
+      .populate("user", "username firstName lastName profilePicture")
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit)
-      .populate("user", "username profilePicture");
+      .limit(limit);
 
-    const totalPosts = await Post.countDocuments();
+    const total = await Post.countDocuments();
+    const totalPages = Math.ceil(total / limit);
 
-    res.status(200).json({
-      status: "success",
-      results: posts.length,
-      total: totalPosts,
-      currentPage: page,
-      totalPages: Math.ceil(totalPosts / limit),
+    res.json({
+      success: true,
       data: {
-        posts
+        posts,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalPosts: total,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        }
       }
     });
   } catch (err) {
-    handleError(res, 500, "Server error");
+    console.error("Get posts error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
 };
 
-// @desc    Get specific post
+// @desc    Get single post
 // @route   GET /api/posts/:id
+// @access  Public
 exports.getPost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
-      .populate("user", "username profilePicture")
-      .populate("comments");
+      .populate("user", "username firstName lastName profilePicture")
+      .populate("comments.user", "username firstName lastName profilePicture");
 
     if (!post) {
-      return handleError(res, 404, "No post found with that ID");
+      return res.status(404).json({ msg: "Post not found" });
     }
 
-    res.status(200).json({
-      status: "success",
-      data: {
-        post
-      }
+    res.json({
+      success: true,
+      data: { post }
     });
   } catch (err) {
-    handleError(res, 500, "Server error");
+    console.error("Get post error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
 };
 
-// @desc    Delete own post
-// @route   DELETE /api/posts/:id
-exports.deletePost = async (req, res) => {
+// @desc    Add comment to post
+// @route   POST /api/posts/:id/comments
+// @access  Private
+exports.addComment = async (req, res) => {
   try {
-    const { userId } = req.body;
+    const { text } = req.body;
     
-    if (!userId) {
-      return handleError(res, 400, "User ID is required");
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ msg: "Comment text is required" });
+    }
+
+    if (text.length > 500) {
+      return res.status(400).json({ msg: "Comment cannot exceed 500 characters" });
     }
 
     const post = await Post.findById(req.params.id);
-    
     if (!post) {
-      return handleError(res, 404, "No post found with that ID");
+      return res.status(404).json({ msg: "Post not found" });
     }
 
-    if (post.user.toString() !== userId) {
-      return handleError(res, 403, "Not authorized to delete this post");
-    }
+    const comment = {
+      user: req.user.id,
+      text: text.trim()
+    };
 
-    if (post.image) {
-      const imagePath = path.join(__dirname, '../public', post.image);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
-    }
+    post.comments.push(comment);
+    await post.save();
 
-    await post.remove();
+    // Populate the new comment with user info
+    await post.populate("comments.user", "username firstName lastName profilePicture");
 
-    res.status(204).json({
-      status: "success",
-      data: null
+    res.json({
+      success: true,
+      data: { post }
     });
   } catch (err) {
-    handleError(res, 500, "Server error");
+    console.error("Add comment error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// @desc    Get comments for a post
+// @route   GET /api/posts/:id/comments
+// @access  Public
+exports.getComments = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ msg: "Post not found" });
+    }
+
+    // Get comments with pagination
+    const comments = post.comments
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(skip, skip + limit);
+
+    // Populate user info for comments
+    await Post.populate(comments, {
+      path: 'user',
+      select: 'username firstName lastName profilePicture'
+    });
+
+    const total = post.comments.length;
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      success: true,
+      data: {
+        comments,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalComments: total,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Get comments error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// @desc    Delete comment
+// @route   DELETE /api/posts/:id/comments/:commentId
+// @access  Private
+exports.deleteComment = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ msg: "Post not found" });
+    }
+
+    const comment = post.comments.id(req.params.commentId);
+    if (!comment) {
+      return res.status(404).json({ msg: "Comment not found" });
+    }
+
+    // Check if user owns the comment or the post
+    if (comment.user.toString() !== req.user.id && post.user.toString() !== req.user.id) {
+      return res.status(401).json({ msg: "Not authorized to delete this comment" });
+    }
+
+    comment.deleteOne();
+    await post.save();
+
+    res.json({
+      success: true,
+      data: {}
+    });
+  } catch (err) {
+    console.error("Delete comment error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// @desc    Delete post
+// @route   DELETE /api/posts/:id
+// @access  Private
+exports.deletePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({ msg: "Post not found" });
+    }
+
+    // Check if user owns the post
+    if (post.user.toString() !== req.user.id) {
+      return res.status(401).json({ msg: "Not authorized to delete this post" });
+    }
+
+    await post.deleteOne();
+
+    res.json({
+      success: true,
+      data: {}
+    });
+  } catch (err) {
+    console.error("Delete post error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
 };
 
 // @desc    Get user's posts
-// @route   GET /api/users/:userId/posts
+// @route   GET /api/posts/user/:userId
+// @access  Public
 exports.getUserPosts = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -142,24 +261,87 @@ exports.getUserPosts = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const posts = await Post.find({ user: req.params.userId })
+      .populate("user", "username firstName lastName profilePicture")
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit)
-      .populate("user", "username profilePicture");
+      .limit(limit);
 
-    const totalPosts = await Post.countDocuments({ user: req.params.userId });
+    const total = await Post.countDocuments({ user: req.params.userId });
+    const totalPages = Math.ceil(total / limit);
 
-    res.status(200).json({
-      status: "success",
-      results: posts.length,
-      total: totalPosts,
-      currentPage: page,
-      totalPages: Math.ceil(totalPosts / limit),
+    res.json({
+      success: true,
       data: {
-        posts
+        posts,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalPosts: total,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        }
       }
     });
   } catch (err) {
-    handleError(res, 500, "Server error");
+    console.error("Get user posts error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// @desc    Like a post
+// @route   POST /api/posts/:id/like
+// @access  Private
+exports.likePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({ msg: "Post not found" });
+    }
+
+    // Check if already liked
+    if (post.likes.includes(req.user.id)) {
+      return res.status(400).json({ msg: "Post already liked" });
+    }
+
+    post.likes.push(req.user.id);
+    await post.save();
+
+    res.json({
+      success: true,
+      data: { post }
+    });
+  } catch (err) {
+    console.error("Like post error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// @desc    Unlike a post
+// @route   DELETE /api/posts/:id/like
+// @access  Private
+exports.unlikePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({ msg: "Post not found" });
+    }
+
+    // Check if not liked
+    if (!post.likes.includes(req.user.id)) {
+      return res.status(400).json({ msg: "Post not liked" });
+    }
+
+    post.likes = post.likes.filter(id => id.toString() !== req.user.id);
+    await post.save();
+
+    res.json({
+      success: true,
+      data: { post }
+    });
+  } catch (err) {
+    console.error("Unlike post error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
 };

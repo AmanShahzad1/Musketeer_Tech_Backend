@@ -2,35 +2,63 @@ const User = require("../models/User");
 
 // @desc    Update user profile
 // @route   PATCH /api/profile
+// @access  Private
 exports.updateProfile = async (req, res) => {
-  const { name, bio, profilePicture, interests } = req.body;
+  const { firstName, lastName, bio, interests } = req.body;
 
   try {
-    const user = await User.findByIdAndUpdate(
+    // Validate interests
+    if (!interests || interests.length === 0) {
+      return res.status(400).json({ msg: "At least one interest is required" });
+    }
+
+    // Check if username is being changed and if it's unique
+    if (req.body.username) {
+      const existingUser = await User.findOne({ 
+        username: req.body.username,
+        _id: { $ne: req.user.id }
+      });
+      if (existingUser) {
+        return res.status(400).json({ msg: "Username already exists" });
+      }
+    }
+
+    // Update user profile
+    const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
-      { name, bio, profilePicture, interests },
-      { new: true }
+      {
+        firstName,
+        lastName,
+        bio,
+        interests,
+        ...(req.body.username && { username: req.body.username })
+      },
+      { new: true, runValidators: true }
     ).select("-password");
 
-    res.json(user);
+    res.json(updatedUser);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
 };
 
-// @desc    Get public profile by username
+// @desc    Get profile by username
 // @route   GET /api/profile/:username
-exports.getPublicProfile = async (req, res) => {
+// @access  Public
+exports.getProfileByUsername = async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username })
-      .select('-password -email -createdAt -updatedAt -__v');
+      .select("-password")
+      .select("-email");
 
     if (!user) {
-      return res.status(404).json({ msg: 'User not found' });
+      return res.status(404).json({ msg: "Profile not found" });
     }
 
     res.json(user);
   } catch (err) {
-    res.status(500).json({ msg: 'Server error' });
+    console.error(err);
+    res.status(500).json({ msg: "Server error" });
   }
 };

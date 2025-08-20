@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 // @desc    Register a new user
 // @route   POST /api/auth/register
 exports.register = async (req, res) => {
-  const { username, email, password, interests } = req.body;
+  const { firstName, lastName, username, email, password, interests } = req.body;
 
   try {
     // Check if user exists
@@ -18,6 +18,8 @@ exports.register = async (req, res) => {
 
     // Create user
     user = new User({
+      firstName,
+      lastName,
       username,
       email,
       password: hashedPassword,
@@ -33,6 +35,7 @@ exports.register = async (req, res) => {
 
     res.status(201).json({ token, user });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
 };
@@ -58,6 +61,7 @@ exports.login = async (req, res) => {
 
     res.json({ token, user });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
 };
@@ -69,6 +73,7 @@ exports.getMe = async (req, res) => {
     const user = await User.findById(req.user.id).select("-password");
     res.json(user);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
 };
