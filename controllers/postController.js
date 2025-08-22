@@ -357,41 +357,41 @@ exports.unlikePost = async (req, res) => {
 
 
 // Update handleLikePost to emit real-time updates
-exports.likePost = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const post = await Post.findById(id);
+// exports.likePost = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const post = await Post.findById(id);
     
-    if (!post) {
-      return res.status(404).json({ msg: "Post not found" });
-    }
+//     if (!post) {
+//       return res.status(404).json({ msg: "Post not found" });
+//     }
 
-    // Check if already liked
-    if (post.likes.includes(req.user.id)) {
-      return res.status(400).json({ msg: "Post already liked" });
-    }
+//     // Check if already liked
+//     if (post.likes.includes(req.user.id)) {
+//       return res.status(400).json({ msg: "Post already liked" });
+//     }
 
-    post.likes.push(req.user.id);
-    await post.save();
+//     post.likes.push(req.user.id);
+//     await post.save();
 
-    // Emit real-time update
-    const io = req.app.get('io');
-    io.emit('postLiked', {
-      postId: id,
-      userId: req.user.id,
-      userName: req.user.firstName + ' ' + req.user.lastName,
-      likeCount: post.likes.length
-    });
+//     // Emit real-time update
+//     const io = req.app.get('io');
+//     io.emit('postLiked', {
+//       postId: id,
+//       userId: req.user.id,
+//       userName: req.user.firstName + ' ' + req.user.lastName,
+//       likeCount: post.likes.length
+//     });
 
-    res.json({
-      success: true,
-      data: { post }
-    });
-  } catch (err) {
-    console.error("Like post error:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
+//     res.json({
+//       success: true,
+//       data: { post }
+//     });
+//   } catch (err) {
+//     console.error("Like post error:", err);
+//     res.status(500).json({ msg: "Server error" });
+//   }
+// };
 
 // Update addComment to emit real-time updates
 exports.addComment = async (req, res) => {

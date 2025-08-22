@@ -31,18 +31,65 @@ const io = socketIo(server, {
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
   // Join user to their personal room
   socket.on('join', (userId) => {
     socket.join(`user_${userId}`);
     socket.userId = userId;
-    console.log(`User ${userId} joined their room`);
+  });
+
+  // Handle typing events
+  socket.on('typing', (data) => {
+    // Broadcast typing event to all participants in the chat except the sender
+    socket.to(`chat_${data.chatId}`).emit('userTyping', {
+      chatId: data.chatId,
+      userId: data.userId,
+      username: data.username
+    });
+  });
+
+  socket.on('stopTyping', (data) => {
+    // Broadcast stop typing event to all participants in the chat except the sender
+    socket.to(`chat_${data.chatId}`).emit('userStoppedTyping', {
+      chatId: data.chatId,
+      userId: data.userId,
+      username: data.username
+    });
+  });
+
+  // Join chat room when user starts chatting
+  socket.on('joinChat', (chatId) => {
+    socket.join(`chat_${chatId}`);
+  });
+
+  // Handle post like events
+  socket.on('postLiked', (data) => {
+    // Broadcast like event to all users except sender
+    socket.broadcast.emit('postLiked', {
+      postId: data.postId,
+      userId: data.userId
+    });
+  });
+
+  socket.on('postUnliked', (data) => {
+    // Broadcast unlike event to all users except sender
+    socket.broadcast.emit('postUnliked', {
+      postId: data.postId,
+      userId: data.userId
+    });
+  });
+
+  // Handle comment events
+  socket.on('commentAdded', (data) => {
+    // Broadcast comment event to all users except sender
+    socket.broadcast.emit('newComment', {
+      postId: data.postId,
+      comment: data.comment
+    });
   });
 
   // Handle disconnection
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    // Clean up user data if needed
   });
 });
 
@@ -72,4 +119,4 @@ app.use("/api/chat", chatRoutes);
 const PORT = process.env.PORT || 5000;
 
 // Use server.listen instead of app.listen
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 

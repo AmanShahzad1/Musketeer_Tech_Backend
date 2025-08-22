@@ -1,7 +1,6 @@
 const Chat = require("../models/Chat");
 const User = require("../models/User");
 
-
 exports.getOrCreateChat = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -36,7 +35,6 @@ exports.getOrCreateChat = async (req, res) => {
   }
 };
 
-
 exports.sendMessage = async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -60,19 +58,37 @@ exports.sendMessage = async (req, res) => {
     const message = {
       sender: req.user.id,
       text: text.trim(),
-      timestamp: new Date()
+      timestamp: new Date(),
+      read: false
     };
 
     chat.messages.push(message);
     chat.lastMessage = new Date();
     await chat.save();
 
-    // Populate sender info
-    await chat.populate('messages.sender', 'username firstName lastName profilePicture');
+    // Populate the newly added message with sender info
+    const populatedChat = await Chat.findById(chatId)
+      .populate('messages.sender', 'username firstName lastName profilePicture')
+      .populate('participants', 'username firstName lastName profilePicture');
+
+    const newMessage = populatedChat.messages[populatedChat.messages.length - 1];
+
+    // Emit socket event for real-time updates
+    const io = req.app.get('io');
+    if (io) {
+      chat.participants.forEach(participantId => {
+        if (participantId.toString() !== req.user.id) {
+          io.to(`user_${participantId}`).emit('newMessage', {
+            chatId: chatId,
+            message: newMessage
+          });
+        }
+      });
+    }
 
     res.json({
       success: true,
-      data: { message }
+      data: { message: newMessage }
     });
   } catch (err) {
     console.error("Send message error:", err);
@@ -80,18 +96,14 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
-
-
-
-
-
-
 exports.getChatMessages = async (req, res) => {
   try {
     const { chatId } = req.params;
     const { page = 1, limit = 50 } = req.query;
 
-    const chat = await Chat.findById(chatId);
+    const chat = await Chat.findById(chatId)
+      .populate('messages.sender', 'username firstName lastName profilePicture');
+    
     if (!chat) {
       return res.status(404).json({ msg: "Chat not found" });
     }
@@ -104,9 +116,8 @@ exports.getChatMessages = async (req, res) => {
     // Paginate messages
     const skip = (page - 1) * limit;
     const messages = chat.messages
-      .sort({ timestamp: -1 })
-      .slice(skip, skip + parseInt(limit))
-      .reverse();
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .slice(skip, skip + parseInt(limit));
 
     res.json({
       success: true,
@@ -120,7 +131,6 @@ exports.getChatMessages = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
-
 
 exports.getUserChats = async (req, res) => {
   try {

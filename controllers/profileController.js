@@ -4,7 +4,7 @@ const User = require("../models/User");
 // @route   PATCH /api/profile
 // @access  Private
 exports.updateProfile = async (req, res) => {
-  const { firstName, lastName, bio, interests } = req.body;
+  const { firstName, lastName, bio, interests, profilePicture } = req.body;
 
   try {
     // Validate interests
@@ -31,6 +31,7 @@ exports.updateProfile = async (req, res) => {
         lastName,
         bio,
         interests,
+        ...(profilePicture && { profilePicture }),
         ...(req.body.username && { username: req.body.username })
       },
       { new: true, runValidators: true }
@@ -57,6 +58,32 @@ exports.getProfileByUsername = async (req, res) => {
     }
 
     res.json(user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// @desc    Upload profile picture
+// @route   POST /api/profile/picture
+// @access  Private
+exports.uploadProfilePicture = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ msg: "No file uploaded" });
+    }
+
+    // Update user's profile picture path
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { profilePicture: req.file.path },
+      { new: true }
+    ).select("-password");
+
+    res.json({
+      msg: "Profile picture uploaded successfully",
+      profilePicture: req.file.path
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Server error" });
