@@ -102,46 +102,46 @@ exports.getPost = async (req, res) => {
   }
 };
 
-// @desc    Add comment to post
-// @route   POST /api/posts/:id/comments
-// @access  Private
-exports.addComment = async (req, res) => {
-  try {
-    const { text } = req.body;
+// // @desc    Add comment to post
+// // @route   POST /api/posts/:id/comments
+// // @access  Private
+// exports.addComment = async (req, res) => {
+//   try {
+//     const { text } = req.body;
     
-    if (!text || text.trim().length === 0) {
-      return res.status(400).json({ msg: "Comment text is required" });
-    }
+//     if (!text || text.trim().length === 0) {
+//       return res.status(400).json({ msg: "Comment text is required" });
+//     }
 
-    if (text.length > 500) {
-      return res.status(400).json({ msg: "Comment cannot exceed 500 characters" });
-    }
+//     if (text.length > 500) {
+//       return res.status(400).json({ msg: "Comment cannot exceed 500 characters" });
+//     }
 
-    const post = await Post.findById(req.params.id);
-    if (!post) {
-      return res.status(404).json({ msg: "Post not found" });
-    }
+//     const post = await Post.findById(req.params.id);
+//     if (!post) {
+//       return res.status(404).json({ msg: "Post not found" });
+//     }
 
-    const comment = {
-      user: req.user.id,
-      text: text.trim()
-    };
+//     const comment = {
+//       user: req.user.id,
+//       text: text.trim()
+//     };
 
-    post.comments.push(comment);
-    await post.save();
+//     post.comments.push(comment);
+//     await post.save();
 
-    // Populate the new comment with user info
-    await post.populate("comments.user", "username firstName lastName profilePicture");
+//     // Populate the new comment with user info
+//     await post.populate("comments.user", "username firstName lastName profilePicture");
 
-    res.json({
-      success: true,
-      data: { post }
-    });
-  } catch (err) {
-    console.error("Add comment error:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
+//     res.json({
+//       success: true,
+//       data: { post }
+//     });
+//   } catch (err) {
+//     console.error("Add comment error:", err);
+//     res.status(500).json({ msg: "Server error" });
+//   }
+// };
 
 // @desc    Get comments for a post
 // @route   GET /api/posts/:id/comments
@@ -356,43 +356,6 @@ exports.unlikePost = async (req, res) => {
 
 
 
-// Update handleLikePost to emit real-time updates
-// exports.likePost = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const post = await Post.findById(id);
-    
-//     if (!post) {
-//       return res.status(404).json({ msg: "Post not found" });
-//     }
-
-//     // Check if already liked
-//     if (post.likes.includes(req.user.id)) {
-//       return res.status(400).json({ msg: "Post already liked" });
-//     }
-
-//     post.likes.push(req.user.id);
-//     await post.save();
-
-//     // Emit real-time update
-//     const io = req.app.get('io');
-//     io.emit('postLiked', {
-//       postId: id,
-//       userId: req.user.id,
-//       userName: req.user.firstName + ' ' + req.user.lastName,
-//       likeCount: post.likes.length
-//     });
-
-//     res.json({
-//       success: true,
-//       data: { post }
-//     });
-//   } catch (err) {
-//     console.error("Like post error:", err);
-//     res.status(500).json({ msg: "Server error" });
-//   }
-// };
-
 // Update addComment to emit real-time updates
 exports.addComment = async (req, res) => {
   try {
@@ -417,20 +380,26 @@ exports.addComment = async (req, res) => {
     post.comments.push(comment);
     await post.save();
 
-    // Populate user info
+    // Populate user info for the newly added comment
     await post.populate('comments.user', 'username firstName lastName profilePicture');
 
-    // Emit real-time update
+    // Get the newly added comment with populated user data
+    const newComment = post.comments[post.comments.length - 1];
+
+    // Emit real-time update with complete comment data
     const io = req.app.get('io');
     io.emit('newComment', {
       postId: id,
       comment: {
-        ...comment,
+        _id: newComment._id,
+        text: newComment.text,
+        createdAt: newComment.createdAt,
         user: {
-          _id: req.user.id,
-          username: req.user.username,
-          firstName: req.user.firstName,
-          lastName: req.user.lastName
+          _id: newComment.user._id,
+          username: newComment.user.username,
+          firstName: newComment.user.firstName,
+          lastName: newComment.user.lastName,
+          profilePicture: newComment.user.profilePicture
         }
       },
       commentCount: post.comments.length
@@ -438,7 +407,7 @@ exports.addComment = async (req, res) => {
 
     res.json({
       success: true,
-      data: { comment }
+      data: { comment: newComment }
     });
   } catch (err) {
     console.error("Add comment error:", err);
